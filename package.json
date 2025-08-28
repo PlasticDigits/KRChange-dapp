@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
-    "start": "next start",
-    "lint": "eslint"
+    "build": "next build --turbopack && next export",
+    "start": "npx --yes serve out -l 3000",
+    "lint": "eslint",
+    "tokens:gen": "python3 scripts/generate_tokenlist.py"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.7",
@@ -15,6 +16,7 @@
     "clsx": "^2.1.1",
     "framer-motion": "^12.23.12",
     "lucide-react": "^0.542.0",
+    "ethers": "^6.13.4",
     "next": "15.5.2",
     "react": "19.1.0",
     "react-dom": "19.1.0",

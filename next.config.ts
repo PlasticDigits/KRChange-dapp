@@ -1,7 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Export a fully static site (no Node.js server)
+  output: "export",
+  images: {
+    unoptimized: true,
+  },
+  turbopack: {
+    // Silence root inference warning by explicitly setting the project root
+    root: process.cwd(),
+  },
 };
 
 export default nextConfig;

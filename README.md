@@ -1,36 +1,99 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## KRChange DEX Frontend
 
-## Getting Started
+Dark-first UI for KRChange DeFi on KasPlex.
 
-First, run the development server:
+### Run locally
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+1. Install deps
+
+```
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Start dev server
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+3. Open http://localhost:3000
 
-## Learn More
+### Features
 
-To learn more about Next.js, take a look at the following resources:
+- Dark mode-first design with gradient + grid background
+- Top navigation with links (Pools, Swap), social icons, Connect Wallet placeholder, and Network picker
+- Home redirects to `/pools`
+- `/pools`: KPI cards, searchable/sortable token table with sparkline, loading state
+- `/swap`: basic swap shell with token pickers and disabled Swap button
+- Minimal on-chain health check on `/pools` reads factory owner via ABIs in `src/out`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Networks
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Networks are defined in `public/config.json` using chainId keys and a `defaultNetworkId`.
+- Add a new network by appending under `networks` and placing token images under `public/tokens/<chainId>/`.
+- The Network picker reads from `config.json`.
 
-## Deploy on Vercel
+Example `public/config.json` snippet:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```json
+{
+  "defaultNetworkId": 167012,
+  "networks": {
+    "167012": {
+      "name": "KasPlex Testnet",
+      "rpcUrl": "https://rpc.kasplextest.xyz",
+      "explorerUrl": "https://explorer.testnet.kasplextest.xyz",
+      "currency": { "symbol": "KAS", "decimals": 18 },
+      "contracts": {
+        "factory": "0xa1b0785Cb418D666BE9069400f4d4D7a86e3F5e0",
+        "router": "0x820d8AE8378eD32eFfa50C93A0ee06e5942FB175",
+        "ammZapV1": "0x991291B2bB4c49228a687CeD72EABd34d7Aeaa0b"
+      }
+    }
+  }
+}
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Token assets and tokenlist
+
+- Put token images at `public/tokens/<chainId>/<tokenAddress>.png` (lowercase address).
+- Generate `public/tokenlist.json` by querying on-chain metadata (name, symbol, decimals):
+
+```
+npm run tokens:gen
+```
+
+- You can override RPC/chain when generating:
+
+```
+KASPLEX_RPC=https://rpc.kasplextest.xyz CHAIN_ID=167012 npm run tokens:gen
+```
+
+### ABIs
+
+- Contract ABIs are under `src/out` and are used for on-chain reads.
+
+### Environment
+
+- Place any secrets in a local `.env` (not committed). Add examples to `env.example` if needed.
+
+### Main files
+
+- Layout and theme: `src/app/layout.tsx`, `src/app/globals.css`
+- Navigation: `src/components/brand/Logo.tsx`, `src/components/nav/TopNav.tsx`, `src/components/nav/NetworkPicker.tsx`
+- Pages: `src/app/page.tsx` (redirect), `src/app/pools/page.tsx`, `src/app/swap/page.tsx`
+- Components: `src/components/kpi/KpiCard.tsx`, `src/components/loaders/LoadingTokens.tsx`, `src/components/tables/TokenTable.tsx`, `src/components/charts/Sparkline.tsx`
+- Utilities: `src/lib/format.ts`, `src/lib/chain.ts`, `src/lib/ethers.ts`
+- Token tooling: `scripts/generate_tokenlist.py`, `public/tokenlist.json`, `public/tokens/<chainId>/...`
+- Docs: `STYLE_GUIDE.md`, `REQUIREMENTS.md`
+
+### Next steps
+
+- Integrate a wallet provider compatible with KasPlex; wire the Connect button
+- Replace mock data with real pool/token data from backend or on-chain
+- Add token/pool detail pages and routing
+- Improve loading/error states and accessibility
+
+### Screenshots
+
+- Add screenshots by placing images under `public/` and linking them here.

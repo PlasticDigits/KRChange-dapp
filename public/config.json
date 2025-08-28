@@ -1,0 +1,17 @@
+{
+  "defaultNetworkId": 167012,
+  "networks": {
+    "167012": {
+      "name": "KasPlex Testnet",
+      "rpcUrl": "https://rpc.kasplextest.xyz",
+      "explorerUrl": "https://explorer.testnet.kasplextest.xyz",
+      "currency": { "symbol": "KAS", "decimals": 18 },
+      "contracts": {
+        "factory": "0xa1b0785Cb418D666BE9069400f4d4D7a86e3F5e0",
+        "router": "0x820d8AE8378eD32eFfa50C93A0ee06e5942FB175",
+        "ammZapV1": "0x991291B2bB4c49228a687CeD72EABd34d7Aeaa0b"
+      },
+      "routingBases": ["WKAS", "USDT", "USDC"]
+    }
+  }
+}

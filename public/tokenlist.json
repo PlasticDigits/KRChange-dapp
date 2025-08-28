@@ -1,0 +1,67 @@
+{
+  "name": "KasPlex Testnet Tokens (KRChange)",
+  "timestamp": "2025-08-28T12:45:30.556807Z",
+  "version": {
+    "major": 0,
+    "minor": 1,
+    "patch": 0
+  },
+  "tokens": [
+    {
+      "address": "0x593cd4124ffe9d11b3114259fbc170a5759e0f54",
+      "symbol": "USDC",
+      "name": "USD Coin",
+      "decimals": 18,
+      "chainId": 167012,
+      "logoURI": "/tokens/167012/0x593cd4124ffe9d11b3114259fbc170a5759e0f54.png"
+    },
+    {
+      "address": "0x654A3287c317D4Fc6e8482FeF523Dc4572b563AA",
+      "symbol": "WKAS",
+      "name": "Wrapped KAS",
+      "decimals": 18,
+      "chainId": 167012,
+      "logoURI": "/tokens/167012/0x654A3287c317D4Fc6e8482FeF523Dc4572b563AA.png"
+    },
+    {
+      "address": "0x8869040c9afabdabc6d0dc773d4c98a681ba4a92",
+      "symbol": "FCN",
+      "name": "Fight Club Network",
+      "decimals": 18,
+      "chainId": 167012,
+      "logoURI": "/tokens/167012/0x8869040c9afabdabc6d0dc773d4c98a681ba4a92.png"
+    },
+    {
+      "address": "0x9cbf7d0146d0bbd1f8294bbad2bb6208a0b85cff",
+      "symbol": "BLOKK",
+      "name": "Blokkplay",
+      "decimals": 18,
+      "chainId": 167012,
+      "logoURI": "/tokens/167012/0x9cbf7d0146d0bbd1f8294bbad2bb6208a0b85cff.png"
+    },
+    {
+      "address": "0xc6173ed9c6ebf8a56c633c64887833f0de4b75e8",
+      "symbol": "GEM",
+      "name": "Gem Launch",
+      "decimals": 18,
+      "chainId": 167012,
+      "logoURI": "/tokens/167012/0xc6173ed9c6ebf8a56c633c64887833f0de4b75e8.png"
+    },
+    {
+      "address": "0xecff9aabd043e49c450a73808c7a16aa96e2000f",
+      "symbol": "USDT",
+      "name": "USDT",
+      "decimals": 18,
+      "chainId": 167012,
+      "logoURI": "/tokens/167012/0xecff9aabd043e49c450a73808c7a16aa96e2000f.png"
+    },
+    {
+      "address": "0xf87e587ab945f7b111329a6ace6dc497d34f098b",
+      "symbol": "KFC",
+      "name": "Kaspa Finance",
+      "decimals": 18,
+      "chainId": 167012,
+      "logoURI": "/tokens/167012/0xf87e587ab945f7b111329a6ace6dc497d34f098b.png"
+    }
+  ]
+}
