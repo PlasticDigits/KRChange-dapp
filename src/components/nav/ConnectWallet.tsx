@@ -4,11 +4,18 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { getPublicConfig } from "@/lib/chain";
 
+import type { Eip1193Provider } from "ethers";
+
 declare global {
   interface Window {
-    ethereum?: any;
+    ethereum?: Eip1193Provider;
   }
 }
+
+type Eip1193WithEvents = Eip1193Provider & {
+  on?: (event: string, listener: (...args: unknown[]) => void) => void;
+  removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
+};
 
 function shortenAddress(addr: string): string {
   if (!addr) return "";
@@ -23,16 +30,19 @@ export default function ConnectWallet() {
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const eth = window.ethereum;
+    const eth = window.ethereum as Eip1193WithEvents | undefined;
     if (!eth) return;
 
-    eth.request({ method: "eth_accounts" })
-      .then((accounts: string[]) => {
+    eth
+      .request({ method: "eth_accounts" })
+      .then((res) => {
+        const accounts = (res as unknown as string[]) || [];
         if (accounts && accounts.length > 0) setAccount(accounts[0]);
       })
       .catch(() => {});
 
-    const onAccountsChanged = (accounts: string[]) => {
+    const onAccountsChanged = (...args: unknown[]) => {
+      const accounts = (args[0] as string[]) || [];
       setAccount(accounts && accounts.length > 0 ? accounts[0] : null);
     };
     eth.on?.("accountsChanged", onAccountsChanged);
@@ -73,7 +83,7 @@ export default function ConnectWallet() {
     }
     try {
       setConnecting(true);
-      const accounts: string[] = await eth.request({ method: "eth_requestAccounts" });
+      const accounts = (await eth.request({ method: "eth_requestAccounts" })) as unknown as string[];
       setAccount(accounts && accounts.length > 0 ? accounts[0] : null);
     } catch {
       // ignore
@@ -94,7 +104,7 @@ export default function ConnectWallet() {
         method: "wallet_requestPermissions",
         params: [{ eth_accounts: {} }],
       });
-      const accounts: string[] = await window.ethereum?.request({ method: "eth_requestAccounts" });
+      const accounts = (await window.ethereum?.request({ method: "eth_requestAccounts" })) as unknown as string[];
       setAccount(accounts && accounts.length > 0 ? accounts[0] : null);
     } catch {
       // ignore
@@ -123,7 +133,7 @@ export default function ConnectWallet() {
 
   if (account) {
     return (
-      <div className="relative" ref={menuRef}>
+      <div className="relative" ref={menuRef} onClick={(e) => e.stopPropagation()}>
         <button
           onClick={() => setMenuOpen((v) => !v)}
           className="inline-flex items-center justify-center h-9 rounded-md px-3 bg-secondary text-sm hover:bg-secondary/80 transition-colors"
@@ -137,6 +147,7 @@ export default function ConnectWallet() {
           <div
             role="menu"
             className="absolute right-0 mt-2 w-56 rounded-md border border-border bg-popover shadow-md p-1 z-50"
+            onClick={(e) => e.stopPropagation()}
           >
             <button
               className="w-full text-left px-3 py-2 rounded-md hover:bg-secondary text-sm"

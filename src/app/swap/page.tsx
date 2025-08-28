@@ -5,7 +5,7 @@ import TokenAmountSelector from "@/components/inputs/TokenAmountSelector";
 import CleanNumberInput from "@/components/inputs/CleanNumberInput";
 import TxProgress from "@/components/loaders/TxProgress";
 import { getEffectiveNetworkId, resolveChain, getPublicConfig } from "@/lib/chain";
-import { findBestRoute } from "@/lib/routing";
+import { findBestRoute, findBestRouteForExactOut } from "@/lib/routing";
 import type { ContractRunner, Eip1193Provider } from "ethers";
 import { Settings } from "lucide-react";
 
@@ -16,7 +16,9 @@ export default function SwapPage() {
   const [chainId, setChainId] = useState<number | null>(null);
   const [fromToken, setFromToken] = useState<Token | null>(null);
   const [toToken, setToToken] = useState<Token | null>(null);
-  const [amount, setAmount] = useState("");
+  const [amountIn, setAmountIn] = useState("");
+  const [amountOut, setAmountOut] = useState("");
+  const [exactOutMode, setExactOutMode] = useState(false);
   const [slippagePct, setSlippagePct] = useState<number>(3);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [account, setAccount] = useState<string | null>(null);
@@ -25,9 +27,11 @@ export default function SwapPage() {
   const [txError, setTxError] = useState("");
   const [txStage, setTxStage] = useState<null | { step: number; total: number; label: string; pending: boolean }>(null);
   const [txCountdownKey, setTxCountdownKey] = useState<number>(0);
-  const [quoteOut, setQuoteOut] = useState<bigint | null>(null);
+  const [quoteOut, setQuoteOut] = useState<bigint | null>(null); // for exact-in
   const [quoteDisplay, setQuoteDisplay] = useState("");
   const [bestPath, setBestPath] = useState<string[] | null>(null);
+  const [quoteInRequired, setQuoteInRequired] = useState<bigint | null>(null); // for exact-out
+  const [quoteInDisplay, setQuoteInDisplay] = useState("");
   const [factoryFeeBips, setFactoryFeeBips] = useState<number>(0);
   const effectiveToleranceBips = useMemo(() => {
     const hops = (bestPath?.length ?? 2) - 1;
@@ -159,44 +163,60 @@ export default function SwapPage() {
   const canSubmit = useMemo(() => {
     if (!fromToken || !toToken || !chainId) return false;
     if (fromToken.address.toLowerCase() === toToken.address.toLowerCase()) return false;
-    const a = Number(amount);
-    if (!isFinite(a) || a <= 0) return false;
+    if (exactOutMode) {
+      const b = Number(amountOut);
+      if (!isFinite(b) || b <= 0) return false;
+    } else {
+      const a = Number(amountIn);
+      if (!isFinite(a) || a <= 0) return false;
+    }
     return true;
-  }, [fromToken, toToken, chainId, amount]);
+  }, [fromToken, toToken, chainId, amountIn, amountOut, exactOutMode]);
 
-  // Quote expected output using pair reserves (Uniswap V2 formula)
-  const refreshQuote = useCallback(async () => {
-    setQuoteDisplay("");
-    setQuoteOut(null);
+  // Quote based on mode
+  const refreshRouting = useCallback(async () => {
     setBestPath(null);
+    setQuoteOut(null);
+    setQuoteDisplay("");
+    setQuoteInRequired(null);
+    setQuoteInDisplay("");
     if (!fromToken || !toToken || !chainId) return;
-    const n = Number(amount);
-    if (!isFinite(n) || n <= 0) return;
+    const cfg = await getPublicConfig();
+    const bases = (cfg.networks[String(chainId)] as { routingBases?: string[] } | undefined)?.routingBases || ["WKAS", "USDT", "USDC"];
+    const { parseUnits, formatUnits } = await import("ethers");
     try {
-      const cfg = await getPublicConfig();
-      const bases = (cfg.networks[String(chainId)] as { routingBases?: string[] } | undefined)?.routingBases || ["WKAS", "USDT", "USDC"];
-      const { parseUnits, formatUnits } = await import("ethers");
-      const amtIn = parseUnits(amount, fromToken.decimals);
-      const { path, amountOut } = await findBestRoute(chainId, tokens.filter((t) => t.chainId === chainId), fromToken, toToken, amtIn, bases);
-      if (path && amountOut) {
-        setBestPath(path);
-        setQuoteOut(amountOut);
-        setQuoteDisplay(formatUnits(amountOut, toToken.decimals));
+      if (exactOutMode) {
+        const n = Number(amountOut);
+        if (!isFinite(n) || n <= 0) return;
+        const desiredOut = parseUnits(amountOut, toToken.decimals);
+        const { path, amountIn } = await findBestRouteForExactOut(chainId, tokens.filter((t) => t.chainId === chainId), fromToken, toToken, desiredOut, bases);
+        if (path && amountIn) {
+          setBestPath(path);
+          setQuoteInRequired(amountIn);
+          setQuoteInDisplay(formatUnits(amountIn, fromToken.decimals));
+          // Also set input field to show computed requirement
+          setAmountIn(formatUnits(amountIn, fromToken.decimals));
+        }
       } else {
-        setBestPath(null);
-        setQuoteOut(null);
-        setQuoteDisplay("");
+        const n = Number(amountIn);
+        if (!isFinite(n) || n <= 0) return;
+        const amtIn = parseUnits(amountIn, fromToken.decimals);
+        const { path, amountOut } = await findBestRoute(chainId, tokens.filter((t) => t.chainId === chainId), fromToken, toToken, amtIn, bases);
+        if (path && amountOut) {
+          setBestPath(path);
+          setQuoteOut(amountOut);
+          setQuoteDisplay(formatUnits(amountOut, toToken.decimals));
+          // Also clear any output manual value
+          setAmountOut("");
+        }
       }
     } catch {
-      setQuoteOut(null);
-      setQuoteDisplay("");
-    } finally {
     }
-  }, [fromToken, toToken, chainId, amount, tokens]);
+  }, [fromToken, toToken, chainId, tokens, amountIn, amountOut, exactOutMode]);
 
   useEffect(() => {
-    void refreshQuote();
-  }, [refreshQuote]);
+    void refreshRouting();
+  }, [refreshRouting]);
 
   // Allowance check for fromToken
   const refreshAllowance = useCallback(async () => {
@@ -222,7 +242,16 @@ export default function SwapPage() {
     void refreshAllowance();
   }, [refreshAllowance]);
 
-  const desiredAmountIn = useMemo(() => (fromToken ? decimalToBigInt(amount, fromToken.decimals) : null), [amount, fromToken]);
+  const desiredAmountIn = useMemo(() => {
+    if (!fromToken) return null;
+    if (exactOutMode) {
+      if (!quoteInRequired) return null;
+      // add tolerance to allowance need
+      const bips = BigInt(effectiveToleranceBips);
+      return (quoteInRequired * (BigInt(10000) + bips)) / BigInt(10000);
+    }
+    return decimalToBigInt(amountIn, fromToken.decimals);
+  }, [fromToken, exactOutMode, quoteInRequired, effectiveToleranceBips, amountIn]);
   const needsApproval = useMemo(() => {
     if (!desiredAmountIn || allowanceFrom === null) return false;
     return allowanceFrom < desiredAmountIn;
@@ -257,14 +286,7 @@ export default function SwapPage() {
       const signer = await provider.getSigner();
       const acct = await signer.getAddress();
 
-      const amtIn = parseUnits(amount, fromToken.decimals);
       const totalBips = effectiveToleranceBips;
-      // Compute minOut from quote when available
-      let amountOutMin = BigInt(0);
-      if (quoteOut && quoteOut > BigInt(0)) {
-        const bips = BigInt(Math.min(10000, Math.max(0, totalBips))); // cap at 100%
-        amountOutMin = (quoteOut * (BigInt(10000) - bips)) / BigInt(10000);
-      }
 
       const totalSteps = (needsApproval ? 1 : 0) + 1; // +1 for swap
       let step = 0;
@@ -273,28 +295,53 @@ export default function SwapPage() {
         setTxStage({ step, total: totalSteps, label, pending: false });
       };
 
-      if (needsApproval) {
+      if (needsApproval && desiredAmountIn) {
         announce(`Approve ${fromToken.symbol}`);
-        await ensureAllowance(fromToken.address, acct, chain.contracts.router, amtIn, signer, () => {
+        await ensureAllowance(fromToken.address, acct, chain.contracts.router, desiredAmountIn, signer, () => {
           setTxCountdownKey(Date.now());
           setTxStage({ step, total: totalSteps, label: `Approve ${fromToken.symbol}`, pending: true });
         });
       }
 
       announce("Swap tokens");
-      const routerAbi = [
-        "function swapExactTokensForTokens(uint256,uint256,address[],address,uint256) returns (uint256[])",
+      const routerAbiExactIn = [
+        "function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint256,uint256,address[],address,uint256)",
       ];
-      const router = new Contract(chain.contracts.router, routerAbi, signer);
-      const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
+      const routerAbiExactOut = [
+        "function swapTokensForExactTokens(uint256,uint256,address[],address,uint256) returns (uint256[])",
+      ];
       const path = bestPath ?? [fromToken.address, toToken.address];
-      const tx = await router.swapExactTokensForTokens(
-        amtIn,
-        amountOutMin,
-        path,
-        acct,
-        deadline
-      );
+      const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
+      let tx;
+      if (exactOutMode) {
+        if (!amountOut) throw new Error("Missing output amount");
+        const desiredOut = parseUnits(amountOut, toToken.decimals);
+        const router = new Contract(chain.contracts.router, routerAbiExactOut, signer);
+        const amountInMax = desiredAmountIn ?? quoteInRequired ?? BigInt(0);
+        tx = await router.swapTokensForExactTokens(
+          desiredOut,
+          amountInMax,
+          path,
+          acct,
+          deadline
+        );
+      } else {
+        const amtIn = parseUnits(amountIn, fromToken.decimals);
+        // Compute minOut from quote when available
+        let amountOutMin = BigInt(0);
+        if (quoteOut && quoteOut > BigInt(0)) {
+          const bips = BigInt(Math.min(10000, Math.max(0, totalBips))); // cap at 100%
+          amountOutMin = (quoteOut * (BigInt(10000) - bips)) / BigInt(10000);
+        }
+        const router = new Contract(chain.contracts.router, routerAbiExactIn, signer);
+        tx = await router.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+          amtIn,
+          amountOutMin,
+          path,
+          acct,
+          deadline
+        );
+      }
       try {
         setTxCountdownKey(Date.now());
         setTxStage({ step, total: totalSteps, label: "Swap tokens", pending: true });
@@ -314,7 +361,7 @@ export default function SwapPage() {
     } finally {
       setTxBusy(false);
     }
-  }, [canSubmit, fromToken, toToken, chainId, amount, ensureAllowance, needsApproval, refreshAllowance, quoteOut, bestPath, effectiveToleranceBips]);
+  }, [canSubmit, fromToken, toToken, chainId, amountIn, amountOut, ensureAllowance, needsApproval, refreshAllowance, quoteOut, bestPath, effectiveToleranceBips, exactOutMode, quoteInRequired, desiredAmountIn]);
 
   return (
     <div className="max-w-lg mx-auto">
@@ -363,10 +410,10 @@ export default function SwapPage() {
               setToToken(fromToken);
             }
             setFromToken(t);
-            setAmount("");
+            setAmountIn("");
           }}
-          amount={amount}
-          onAmountChange={(v) => setAmount(v)}
+          amount={amountIn}
+          onAmountChange={(v) => { setExactOutMode(false); setAmountIn(v); }}
           label="From"
           onAddCustomToken={(tok) => setTokens((prev) => (prev.some((x) => x.address.toLowerCase() === tok.address.toLowerCase()) ? prev : [...prev, tok]))}
         />
@@ -381,16 +428,15 @@ export default function SwapPage() {
             }
             setToToken(t);
           }}
-          amount={quoteDisplay}
-          onAmountChange={() => {}}
-          amountReadOnly
-          placeholder="Calculated"
+          amount={exactOutMode ? amountOut : quoteDisplay}
+          onAmountChange={(v) => { setExactOutMode(true); setAmountOut(v); }}
+          placeholder={exactOutMode ? "0.0" : "Calculated"}
           label="To"
           onAddCustomToken={(tok) => setTokens((prev) => (prev.some((x) => x.address.toLowerCase() === tok.address.toLowerCase()) ? prev : [...prev, tok]))}
         />
 
         <button
-          disabled={!canSubmit || txBusy || !quoteOut || quoteOut === BigInt(0)}
+          disabled={!canSubmit || txBusy || (exactOutMode ? !quoteInRequired || quoteInRequired === BigInt(0) : !quoteOut || quoteOut === BigInt(0))}
           onClick={onSwap}
           className={`w-full h-10 rounded-md font-medium transition-opacity ${
             !canSubmit || txBusy || !quoteOut || quoteOut === BigInt(0) ? "bg-primary text-primary-foreground opacity-70 cursor-not-allowed" : "bg-primary text-primary-foreground hover:opacity-90"
@@ -399,7 +445,7 @@ export default function SwapPage() {
           {txBusy ? (needsApproval ? "Processing..." : "Processing...") : needsApproval ? `Approve & Swap` : `Swap`}
         </button>
 
-        <div className="text-xs text-muted-foreground">Expected: {quoteDisplay ? `~${quoteDisplay} ${toToken?.symbol}` : "—"}</div>
+        <div className="text-xs text-muted-foreground">{exactOutMode ? `Required: ${quoteInDisplay ? `~${quoteInDisplay} ${fromToken?.symbol}` : "—"}` : `Expected: ${quoteDisplay ? `~${quoteDisplay} ${toToken?.symbol}` : "—"}`}</div>
         <div className="text-xs text-muted-foreground">Route: {bestPath && bestPath.length > 0 ? bestRouteSymbols : "—"}</div>
 
         {txStage && (

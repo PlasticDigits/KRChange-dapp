@@ -1,4 +1,5 @@
 import { resolveChain } from "@/lib/chain";
+import type { ContractRunner } from "ethers";
 
 export type Token = {
   address: string;
@@ -96,7 +97,7 @@ async function getPairAddress(
   factory: string,
   tokenA: string,
   tokenB: string,
-  provider: any
+  provider: ContractRunner | null | undefined
 ): Promise<string> {
   const { Contract } = await import("ethers");
   const abi = ["function getPair(address,address) view returns (address)"];
@@ -107,7 +108,7 @@ async function getPairAddress(
 
 async function getReserves(
   pairAddr: string,
-  provider: any
+  provider: ContractRunner | null | undefined
 ): Promise<Reserves | null> {
   const now = Date.now();
   const hit = reservesCache.get(pairAddr);
@@ -229,7 +230,7 @@ export async function findBestRoute(
 
   // Resolve pair addresses
   const factory = chain.contracts.factory;
-  const { JsonRpcProvider: _JRP, Contract } = await import("ethers");
+  const { JsonRpcProvider: _JRP } = await import("ethers");
   const provider2 = new _JRP(chain.rpcUrl);
   const addrs = await Promise.all(
     pairLookups.map(({ a, b }) => getPairAddress(factory, a, b, provider2))
@@ -311,7 +312,8 @@ export async function findBestRouteForExactOut(
 
   // Unique pair lookups across all candidates
   const pairLookups: Array<{ a: string; b: string }> = [];
-  const pairKey = (a: string, b: string) => `${a.toLowerCase()}-${b.toLowerCase()}`;
+  const pairKey = (a: string, b: string) =>
+    `${a.toLowerCase()}-${b.toLowerCase()}`;
   const pairKeySet = new Set<string>();
   for (const path of candidates) {
     for (let i = 0; i < path.length - 1; i++) {
@@ -327,18 +329,22 @@ export async function findBestRouteForExactOut(
 
   // Resolve pair addresses
   const factory = chain.contracts.factory;
-  const { JsonRpcProvider: _JRP, Contract } = await import("ethers");
+  const { JsonRpcProvider: _JRP } = await import("ethers");
   const provider2 = new _JRP(chain.rpcUrl);
   const addrs = await Promise.all(
     pairLookups.map(({ a, b }) => getPairAddress(factory, a, b, provider2))
   );
   const lookupToAddr = new Map<string, string>();
-  pairLookups.forEach((p, idx) => lookupToAddr.set(pairKey(p.a, p.b), addrs[idx]));
+  pairLookups.forEach((p, idx) =>
+    lookupToAddr.set(pairKey(p.a, p.b), addrs[idx])
+  );
 
   // Fetch reserves for unique non-zero pairs
   const reservesUsed: Record<string, Reserves> = {};
   const uniquePairs = Array.from(new Set(addrs.filter((x) => x && x !== ZERO)));
-  const reservesArr = await Promise.all(uniquePairs.map((addr) => getReserves(addr, provider)));
+  const reservesArr = await Promise.all(
+    uniquePairs.map((addr) => getReserves(addr, provider))
+  );
   uniquePairs.forEach((addr, idx) => {
     const r = reservesArr[idx];
     if (r) reservesUsed[addr.toLowerCase()] = r;

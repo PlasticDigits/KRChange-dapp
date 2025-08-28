@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build --turbopack && next export",
+    "build": "next build --turbopack",
     "start": "npx --yes serve out -l 3000",
     "lint": "eslint",
     "tokens:gen": "python3 scripts/generate_tokenlist.py"

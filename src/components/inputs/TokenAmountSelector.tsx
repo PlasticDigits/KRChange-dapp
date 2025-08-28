@@ -71,8 +71,8 @@ export default function TokenAmountSelector({ chainId, account: accountProp, tok
     (async () => {
       try {
         const eth = (window as unknown as { ethereum?: Eip1193Provider }).ethereum;
-        if (!eth) return;
-        const accts: string[] = await eth.request?.({ method: "eth_accounts" } as any);
+        if (!eth || !eth.request) return;
+        const accts = (await eth.request({ method: "eth_accounts" })) as unknown as string[];
         if (accts && accts.length > 0) setAccount(accts[0]);
       } catch {}
     })();

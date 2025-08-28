@@ -24,15 +24,17 @@ export default function LiquidityPage() {
       await load(id);
     })();
 
-    const onChanged = (e: any) => {
-      const id = e?.detail?.chainId;
+    type NetworkChangedDetail = { chainId?: number };
+    const onChanged = (e: CustomEvent<NetworkChangedDetail>) => {
+      const id = e.detail?.chainId;
       if (typeof id === "number") {
         setChainId(id);
         load(id);
       }
     };
-    window.addEventListener("krchange:network-changed", onChanged as any);
-    return () => window.removeEventListener("krchange:network-changed", onChanged as any);
+    const handler = onChanged as EventListener;
+    window.addEventListener("krchange:network-changed", handler);
+    return () => window.removeEventListener("krchange:network-changed", handler);
   }, []);
 
   return (
