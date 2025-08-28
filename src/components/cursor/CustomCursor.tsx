@@ -176,7 +176,7 @@ export default function CustomCursor() {
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 pointer-events-none z-[9999]"
+      className="fixed inset-0 pointer-events-none z-[40000]"
       aria-hidden
     >
       {Array.from({ length: DOT_COUNT }).map((_, i) => (

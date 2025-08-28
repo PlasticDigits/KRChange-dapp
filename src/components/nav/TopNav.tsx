@@ -18,7 +18,7 @@ export default function TopNav() {
     }`;
 
   return (
-    <header className="sticky top-0 z-40 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border">
+    <header className="sticky top-0 z-[10000] backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border">
       <div className="container-padded h-14 flex items-center justify-between">
         <div className="flex items-center gap-6">
           <Logo />
