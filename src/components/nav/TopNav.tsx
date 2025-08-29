@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Github, Twitter, Menu } from "lucide-react";
+import { Github, Twitter, Menu, Send } from "lucide-react";
 import Logo from "@/components/brand/Logo";
 import NetworkPicker from "@/components/nav/NetworkPicker";
 import ConnectWallet from "@/components/nav/ConnectWallet";
 import { useState } from "react";
+import { socialLinks } from "@/lib/links";
 
 export default function TopNav() {
   const pathname = usePathname();
@@ -34,7 +35,7 @@ export default function TopNav() {
         <div className="flex items-center gap-2">
           <NetworkPicker />
           <a
-            href="https://github.com/"
+            href={socialLinks.github}
             target="_blank"
             rel="noopener noreferrer"
             aria-label="GitHub"
@@ -43,13 +44,22 @@ export default function TopNav() {
             <Github size={18} />
           </a>
           <a
-            href="https://twitter.com/"
+            href={socialLinks.x}
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Twitter"
             className="p-2 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground"
           >
             <Twitter size={18} />
+          </a>
+          <a
+            href={socialLinks.telegram}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Telegram"
+            className="p-2 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground"
+          >
+            <Send size={18} />
           </a>
           <ConnectWallet />
           <button
@@ -71,6 +81,35 @@ export default function TopNav() {
             <Link href="/liquidity" className="px-2 py-2 rounded-md hover:bg-secondary" onClick={() => setOpen(false)}>
               Liquidity
             </Link>
+            <div className="flex items-center gap-2 pt-1">
+              <a
+                href={socialLinks.github}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="GitHub"
+                className="p-2 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground"
+              >
+                <Github size={18} />
+              </a>
+              <a
+                href={socialLinks.x}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Twitter"
+                className="p-2 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground"
+              >
+                <Twitter size={18} />
+              </a>
+              <a
+                href={socialLinks.telegram}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Telegram"
+                className="p-2 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground"
+              >
+                <Send size={18} />
+              </a>
+            </div>
           </div>
         </div>
       )}
