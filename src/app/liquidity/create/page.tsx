@@ -5,8 +5,10 @@ import { getEffectiveNetworkId, resolveChain } from "@/lib/chain";
 import { Settings } from "lucide-react";
 import type { ContractRunner, Eip1193Provider } from "ethers";
 import TokenAmountSelector from "@/components/inputs/TokenAmountSelector";
-import CleanNumberInput from "@/components/inputs/CleanNumberInput";
 import TxProgress from "@/components/loaders/TxProgress";
+import { isNativeToken, NATIVE_TOKEN_ADDRESS, findWrappedNative } from "@/lib/tokens";
+import SettingsPopover from "@/components/settings/SettingsPopover";
+import { getSlippagePct, SETTINGS_EVENTS } from "@/lib/settings";
 
 type Token = { symbol: string; name: string; address: string; decimals: number; chainId: number; logoURI?: string };
 
@@ -53,6 +55,16 @@ export default function LiquidityCreatePairPage() {
   const [allowanceB, setAllowanceB] = useState<bigint | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // Treat KAS (native) and WKAS (wrapped) as the same logical asset for UI selection purposes
+  const areEffectivelySameToken = useCallback((x: Token | null, y: Token | null): boolean => {
+    if (!x || !y) return false;
+    if (x.address.toLowerCase() === y.address.toLowerCase()) return true;
+    const wrapped = findWrappedNative(tokens, "WKAS");
+    const isXKasFamily = isNativeToken(x) || (!!wrapped && x.address.toLowerCase() === wrapped.address.toLowerCase());
+    const isYKasFamily = isNativeToken(y) || (!!wrapped && y.address.toLowerCase() === wrapped.address.toLowerCase());
+    return isXKasFamily && isYKasFamily;
+  }, [tokens]);
+
   // Load token list and custom tokens, and handle chain changes
   useEffect(() => {
     (async () => {
@@ -69,26 +81,12 @@ export default function LiquidityCreatePairPage() {
     return () => window.removeEventListener("krchange:network-changed", onChanged);
   }, []);
 
-  // Persist slippage between sessions and across pages
+  // Load global slippage and listen for updates
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem("krchange:slippagePct");
-      if (raw !== null) {
-        const n = Number(raw);
-        if (Number.isFinite(n)) setSlippagePct(n);
-      }
-    } catch {}
-    const onSync = () => {
-      try {
-        const raw = window.localStorage.getItem("krchange:slippagePct");
-        if (raw !== null) {
-          const n = Number(raw);
-          if (Number.isFinite(n)) setSlippagePct(n);
-        }
-      } catch {}
-    };
-    window.addEventListener("krchange:slippage-updated", onSync);
-    return () => window.removeEventListener("krchange:slippage-updated", onSync);
+    setSlippagePct(getSlippagePct());
+    const onSync = () => setSlippagePct(getSlippagePct());
+    window.addEventListener(SETTINGS_EVENTS.slippageUpdated, onSync);
+    return () => window.removeEventListener(SETTINGS_EVENTS.slippageUpdated, onSync);
   }, []);
 
   const loadTokensForChain = useCallback(async (id: number) => {
@@ -96,6 +94,16 @@ export default function LiquidityCreatePairPage() {
       const res = await fetch("/tokenlist.json", { cache: "no-store" });
       const j = await res.json();
       const base: Token[] = (j.tokens || []).filter((t: Token) => t.chainId === id);
+      const wrapped = findWrappedNative(base, "WKAS");
+      const kas = {
+        address: NATIVE_TOKEN_ADDRESS,
+        symbol: "KAS",
+        name: "KAS",
+        decimals: 18,
+        chainId: id,
+        logoURI: wrapped?.logoURI,
+      } as Token;
+      const withNative = base.some((t) => t.address.toLowerCase() === NATIVE_TOKEN_ADDRESS.toLowerCase()) ? base : [kas, ...base];
       let custom: Token[] = [];
       try {
         const raw = window.localStorage.getItem(storageKeyForChain(id));
@@ -103,7 +111,7 @@ export default function LiquidityCreatePairPage() {
       } catch {
         // ignore
       }
-      const merged = [...base, ...custom];
+      const merged = [...withNative, ...custom];
       setTokens(merged);
       if (merged.length >= 2) {
         setTokenA(merged[0]);
@@ -171,6 +179,14 @@ export default function LiquidityCreatePairPage() {
       setPair({ loading: false, exists: null, pairAddress: null, token0: null, token1: null, reserve0: null, reserve1: null });
       return;
     }
+    // If both selections are effectively KAS/WKAS, treat as invalid pair to avoid identical-address runtime errors
+    const wrapped = findWrappedNative(tokens, "WKAS");
+    const aKasFamily = isNativeToken(tokenA) || (!!wrapped && tokenA.address.toLowerCase() === wrapped.address.toLowerCase());
+    const bKasFamily = isNativeToken(tokenB) || (!!wrapped && tokenB.address.toLowerCase() === wrapped.address.toLowerCase());
+    if (aKasFamily && bKasFamily) {
+      setPair({ loading: false, exists: null, pairAddress: null, token0: null, token1: null, reserve0: null, reserve1: null });
+      return;
+    }
     setPair((p) => ({ ...p, loading: true }));
     try {
       const chain = await resolveChain(chainId);
@@ -179,7 +195,18 @@ export default function LiquidityCreatePairPage() {
       const provider = new JsonRpcProvider(chain.rpcUrl);
       const factoryAbi = ["function getPair(address,address) view returns (address)"];
       const factory = new Contract(chain.contracts.factory, factoryAbi, provider);
-      const pairAddress: string = await factory.getPair(tokenA.address, tokenB.address);
+      let addrA = tokenA.address;
+      let addrB = tokenB.address;
+      if (isNativeToken(tokenA) || isNativeToken(tokenB)) {
+        try {
+          const routerAbi = ["function WETH() view returns (address)"];
+          const router = new Contract(chain.contracts.router, routerAbi, provider);
+          const weth: string = await router.WETH();
+          if (isNativeToken(tokenA)) addrA = weth;
+          if (isNativeToken(tokenB)) addrB = weth;
+        } catch {}
+      }
+      const pairAddress: string = await factory.getPair(addrA, addrB);
       if (!pairAddress || pairAddress === ZERO_ADDRESS) {
         setPair({ loading: false, exists: false, pairAddress: null, token0: null, token1: null, reserve0: null, reserve1: null });
         return;
@@ -197,7 +224,7 @@ export default function LiquidityCreatePairPage() {
     } catch {
       setPair({ loading: false, exists: null, pairAddress: null, token0: null, token1: null, reserve0: null, reserve1: null });
     }
-  }, [chainId, tokenA, tokenB]);
+  }, [chainId, tokenA, tokenB, tokens]);
 
   useEffect(() => {
     void refreshPairInfo();
@@ -242,8 +269,12 @@ export default function LiquidityCreatePairPage() {
   const validSelection = useMemo(() => {
     if (!tokenA || !tokenB) return false;
     if (tokenA.address.toLowerCase() === tokenB.address.toLowerCase()) return false;
+    const wrapped = findWrappedNative(tokens, "WKAS");
+    const aKasFamily = isNativeToken(tokenA) || (!!wrapped && tokenA.address.toLowerCase() === wrapped.address.toLowerCase());
+    const bKasFamily = isNativeToken(tokenB) || (!!wrapped && tokenB.address.toLowerCase() === wrapped.address.toLowerCase());
+    if (aKasFamily && bKasFamily) return false;
     return true;
-  }, [tokenA, tokenB]);
+  }, [tokenA, tokenB, tokens]);
 
   const canSubmit = useMemo(() => {
     if (!validSelection || !chainId) return false;
@@ -282,14 +313,32 @@ export default function LiquidityCreatePairPage() {
       const { JsonRpcProvider, Contract } = await import("ethers");
       const provider = new JsonRpcProvider(chain.rpcUrl);
       const abi = ["function allowance(address,address) view returns (uint256)"];
-      const a = new Contract(tokenA.address, abi, provider);
-      const b = new Contract(tokenB.address, abi, provider);
-      const [alA, alB] = await Promise.all([
-        a.allowance(account, chain.contracts.router),
-        b.allowance(account, chain.contracts.router),
-      ]);
-      setAllowanceA(BigInt(alA));
-      setAllowanceB(BigInt(alB));
+
+      // Token A allowance
+      if (isNativeToken(tokenA)) {
+        setAllowanceA(null);
+      } else {
+        try {
+          const a = new Contract(tokenA.address, abi, provider);
+          const alA = await a.allowance(account, chain.contracts.router);
+          setAllowanceA(BigInt(alA));
+        } catch {
+          setAllowanceA(null);
+        }
+      }
+
+      // Token B allowance
+      if (isNativeToken(tokenB)) {
+        setAllowanceB(null);
+      } else {
+        try {
+          const b = new Contract(tokenB.address, abi, provider);
+          const alB = await b.allowance(account, chain.contracts.router);
+          setAllowanceB(BigInt(alB));
+        } catch {
+          setAllowanceB(null);
+        }
+      }
     } catch {
       setAllowanceA(null);
       setAllowanceB(null);
@@ -320,7 +369,7 @@ export default function LiquidityCreatePairPage() {
   }, [txBusy, pair.exists, needsApprovalA, needsApprovalB]);
 
   const ensureAllowance = useCallback(async (tokenAddr: string, owner: string, spender: string, amount: bigint, provider: ContractRunner, onSubmitted?: () => void) => {
-    const { Contract } = await import("ethers");
+    const { Contract, MaxUint256 } = await import("ethers");
     const erc20Abi = [
       "function allowance(address,address) view returns (uint256)",
       "function approve(address,uint256) returns (bool)",
@@ -329,7 +378,13 @@ export default function LiquidityCreatePairPage() {
     const c = new Contract(tokenAddr, erc20Abi, provider);
     const current: bigint = await c.allowance(owner, spender);
     if (current >= amount) return;
-    const tx = await c.approve(spender, amount);
+    let infinite = true;
+    try {
+      const raw = window.localStorage.getItem("krchange:infiniteApprovals");
+      if (raw !== null) infinite = raw === "true";
+    } catch {}
+    const approveAmount = infinite ? MaxUint256 : amount;
+    const tx = await c.approve(spender, approveAmount);
     try { onSubmitted?.(); } catch {}
     await tx.wait?.();
   }, []);
@@ -363,7 +418,7 @@ export default function LiquidityCreatePairPage() {
         setTxStage({ step, total: totalSteps, label, pending: false });
       };
 
-      if (needsApprovalA) {
+      if (needsApprovalA && !isNativeToken(tokenA)) {
         advance(`Approve ${tokenA.symbol}`);
         await ensureAllowance(
           tokenA.address,
@@ -377,7 +432,7 @@ export default function LiquidityCreatePairPage() {
           }
         );
       }
-      if (needsApprovalB) {
+      if (needsApprovalB && !isNativeToken(tokenB)) {
         advance(`Approve ${tokenB.symbol}`);
         await ensureAllowance(
           tokenB.address,
@@ -393,21 +448,46 @@ export default function LiquidityCreatePairPage() {
       }
 
       const routerAbi = [
+        "function WETH() view returns (address)",
         "function addLiquidity(address,address,uint256,uint256,uint256,uint256,address,uint256) returns (uint256,uint256,uint256)",
+        "function addLiquidityETH(address,uint256,uint256,uint256,address,uint256) payable returns (uint256,uint256,uint256)",
       ];
       const router = new Contract(chain.contracts.router, routerAbi, signer);
       const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
       advance("Add liquidity");
-      const tx = await router.addLiquidity(
-        tokenA.address,
-        tokenB.address,
-        amtA,
-        amtB,
-        amountAMin,
-        amountBMin,
-        account,
-        deadline
-      );
+      let tx;
+      if (isNativeToken(tokenA) && !isNativeToken(tokenB)) {
+        tx = await router.addLiquidityETH(
+          tokenB.address,
+          amtB,
+          amountBMin,
+          amountAMin,
+          account,
+          deadline,
+          { value: amtA }
+        );
+      } else if (!isNativeToken(tokenA) && isNativeToken(tokenB)) {
+        tx = await router.addLiquidityETH(
+          tokenA.address,
+          amtA,
+          amountAMin,
+          amountBMin,
+          account,
+          deadline,
+          { value: amtB }
+        );
+      } else {
+        tx = await router.addLiquidity(
+          tokenA.address,
+          tokenB.address,
+          amtA,
+          amtB,
+          amountAMin,
+          amountBMin,
+          account,
+          deadline
+        );
+      }
       try {
         setTxCountdownKey(Date.now());
         setTxStage({ step, total: totalSteps, label: "Add liquidity", pending: true });
@@ -445,28 +525,7 @@ export default function LiquidityCreatePairPage() {
         </div>
 
         {settingsOpen && (
-          <div className="absolute right-3 top-12 z-20 w-48 p-3 rounded-md border border-border bg-popover space-y-2">
-            <div className="text-xs text-muted-foreground">Slippage</div>
-            <div className="flex items-center gap-2">
-              <CleanNumberInput
-                value={String(slippagePct)}
-                onValueChange={(v) => {
-                  const n = Number(v || 0);
-                  setSlippagePct(n);
-                  try {
-                    window.localStorage.setItem("krchange:slippagePct", String(n));
-                    window.dispatchEvent(new Event("krchange:slippage-updated"));
-                  } catch {}
-                }}
-                min={0}
-                max={100}
-                step={0.1}
-                ariaLabel="Slippage percent"
-                className="h-8 w-20 px-2 rounded-md bg-secondary text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary text-sm"
-              />
-              <span className="text-xs text-muted-foreground">%</span>
-            </div>
-          </div>
+          <SettingsPopover slippagePct={slippagePct} onSlippageChange={(n) => setSlippagePct(n)} />
         )}
 
         <div className="space-y-3">
@@ -475,7 +534,7 @@ export default function LiquidityCreatePairPage() {
             tokens={tokens}
             selected={tokenA}
             onSelect={(t) => {
-              if (tokenB && tokenB.address.toLowerCase() === t.address.toLowerCase()) {
+              if (tokenB && areEffectivelySameToken(t, tokenB)) {
                 setTokenB(tokenA);
               }
               setTokenA(t);
@@ -493,7 +552,7 @@ export default function LiquidityCreatePairPage() {
             tokens={tokens}
             selected={tokenB}
             onSelect={(t) => {
-              if (tokenA && tokenA.address.toLowerCase() === t.address.toLowerCase()) {
+              if (tokenA && areEffectivelySameToken(tokenA, t)) {
                 setTokenA(tokenB);
               }
               setTokenB(t);

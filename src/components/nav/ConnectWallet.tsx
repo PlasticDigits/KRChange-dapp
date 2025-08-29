@@ -100,8 +100,8 @@ export default function ConnectWallet() {
   const connect = async () => {
     const eth = window.ethereum;
     if (!eth) {
-      log("connect -> no ethereum, opening metamask site");
-      window.open("https://metamask.io/", "_blank", "noopener,noreferrer");
+      log("connect -> no ethereum, opening safepal site");
+      window.open("https://www.safepal.com/en/download", "_blank", "noopener,noreferrer");
       return;
     }
     try {
@@ -118,7 +118,7 @@ export default function ConnectWallet() {
   };
 
   const disconnect = () => {
-    // Dapps cannot programmatically disconnect MetaMask; clear local state instead.
+    // Dapps cannot programmatically disconnect browser wallet; clear local state instead.
     log("disconnect -> clearing local state");
     setAccount(null);
     setMenuOpen(false);

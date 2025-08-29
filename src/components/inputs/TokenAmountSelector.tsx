@@ -5,6 +5,7 @@ import Image from "next/image";
 import CleanNumberInput from "@/components/inputs/CleanNumberInput";
 import { ChevronDown, AlertTriangle } from "lucide-react";
 import { resolveChain } from "@/lib/chain";
+import { isNativeAddress, NATIVE_TOKEN_ADDRESS } from "@/lib/tokens";
 import type { Eip1193Provider } from "ethers";
 
 export type SelectableToken = { symbol: string; name: string; address: string; decimals: number; chainId: number; logoURI?: string };
@@ -113,10 +114,16 @@ export default function TokenAmountSelector({ chainId, account: accountProp, tok
       if (!chain) return;
       const { JsonRpcProvider, Contract, formatUnits } = await import("ethers");
       const provider = new JsonRpcProvider(chain.rpcUrl);
-      const abi = ["function balanceOf(address) view returns (uint256)"];
-      const c = new Contract(t.address, abi, provider);
-      const raw: bigint = await c.balanceOf(account);
-      const display = formatUnits(raw, t.decimals);
+      let display = "";
+      if (isNativeAddress(t.address)) {
+        const raw = await provider.getBalance(account);
+        display = formatUnits(raw, t.decimals);
+      } else {
+        const abi = ["function balanceOf(address) view returns (uint256)"];
+        const c = new Contract(t.address, abi, provider);
+        const raw: bigint = await c.balanceOf(account);
+        display = formatUnits(raw, t.decimals);
+      }
       setCachedBalance(chainId, account, t.address, display);
       setBalances((b) => ({ ...b, [t.address.toLowerCase()]: display }));
     } catch {

@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import TokenAmountSelector from "@/components/inputs/TokenAmountSelector";
-import CleanNumberInput from "@/components/inputs/CleanNumberInput";
+import SettingsPopover from "@/components/settings/SettingsPopover";
+import { getSlippagePct, SETTINGS_EVENTS } from "@/lib/settings";
 import TxProgress from "@/components/loaders/TxProgress";
 import { getEffectiveNetworkId, resolveChain, getPublicConfig } from "@/lib/chain";
 import { findBestRoute, findBestRouteForExactOut } from "@/lib/routing";
+import { findWrappedNative, isNativeToken, NATIVE_TOKEN_ADDRESS } from "@/lib/tokens";
 import type { ContractRunner, Eip1193Provider } from "ethers";
 import { Settings } from "lucide-react";
 
@@ -50,7 +52,22 @@ export default function SwapPage() {
 
   const filtered = useMemo(() => {
     if (!chainId) return tokens;
-    return tokens.filter((t) => t.chainId === chainId);
+    const base = tokens.filter((t) => t.chainId === chainId);
+    // Inject native KAS pseudo-token derived from chain currency and WKAS logo when available
+    // Resolve via getPublicConfig synchronously is not possible here; assume 18 decimals for KAS (from public config)
+    // We fallback to 18 if we cannot infer decimals here; resolveChain is async and used elsewhere
+    const wrapped = findWrappedNative(base, "WKAS");
+    const kasToken = {
+      address: NATIVE_TOKEN_ADDRESS,
+      symbol: "KAS",
+      name: "KAS",
+      decimals: 18,
+      chainId,
+      logoURI: wrapped?.logoURI,
+    } as Token;
+    const hasNative = base.some((t) => t.address.toLowerCase() === NATIVE_TOKEN_ADDRESS.toLowerCase());
+    const withNative = hasNative ? base : [kasToken, ...base];
+    return withNative;
   }, [tokens, chainId]);
 
   useEffect(() => {
@@ -73,26 +90,12 @@ export default function SwapPage() {
     return () => window.removeEventListener("krchange:network-changed", onChanged);
   }, []);
 
-  // Persist slippage between sessions and across pages
+  // Load global slippage and listen for updates
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem("krchange:slippagePct");
-      if (raw !== null) {
-        const n = Number(raw);
-        if (Number.isFinite(n)) setSlippagePct(n);
-      }
-    } catch {}
-    const onSync = () => {
-      try {
-        const raw = window.localStorage.getItem("krchange:slippagePct");
-        if (raw !== null) {
-          const n = Number(raw);
-          if (Number.isFinite(n)) setSlippagePct(n);
-        }
-      } catch {}
-    };
-    window.addEventListener("krchange:slippage-updated", onSync);
-    return () => window.removeEventListener("krchange:slippage-updated", onSync);
+    setSlippagePct(getSlippagePct());
+    const onSync = () => setSlippagePct(getSlippagePct());
+    window.addEventListener(SETTINGS_EVENTS.slippageUpdated, onSync);
+    return () => window.removeEventListener(SETTINGS_EVENTS.slippageUpdated, onSync);
   }, []);
 
   // Load factory trading fee bips
@@ -185,29 +188,52 @@ export default function SwapPage() {
     const bases = (cfg.networks[String(chainId)] as { routingBases?: string[] } | undefined)?.routingBases || ["WKAS", "USDT", "USDC"];
     const { parseUnits, formatUnits } = await import("ethers");
     try {
+      // Detect KAS ↔ WKAS direct wrap/unwrap, quote 1:1
+      const tokensForChain = tokens.filter((t) => t.chainId === chainId && !isNativeToken(t));
+      const wrapped = findWrappedNative(tokensForChain, "WKAS");
+      const fromIsKasFamily = isNativeToken(fromToken) || (!!wrapped && fromToken.address.toLowerCase() === wrapped.address.toLowerCase());
+      const toIsKasFamily = isNativeToken(toToken) || (!!wrapped && toToken.address.toLowerCase() === wrapped.address.toLowerCase());
+      const isKasWkasTrade = fromIsKasFamily && toIsKasFamily && (!!wrapped);
+
       if (exactOutMode) {
         const n = Number(amountOut);
         if (!isFinite(n) || n <= 0) return;
         const desiredOut = parseUnits(amountOut, toToken.decimals);
-        const { path, amountIn } = await findBestRouteForExactOut(chainId, tokens.filter((t) => t.chainId === chainId), fromToken, toToken, desiredOut, bases);
-        if (path && amountIn) {
-          setBestPath(path);
-          setQuoteInRequired(amountIn);
-          setQuoteInDisplay(formatUnits(amountIn, fromToken.decimals));
-          // Also set input field to show computed requirement
-          setAmountIn(formatUnits(amountIn, fromToken.decimals));
+        if (isKasWkasTrade) {
+          setBestPath([fromToken.address, toToken.address]);
+          setQuoteInRequired(desiredOut);
+          setQuoteInDisplay(formatUnits(desiredOut, fromToken.decimals));
+          setAmountIn(formatUnits(desiredOut, fromToken.decimals));
+        } else {
+          const fromNorm = isNativeToken(fromToken) && wrapped ? { ...wrapped } : fromToken;
+          const toNorm = isNativeToken(toToken) && wrapped ? { ...wrapped } : toToken;
+          const { path, amountIn } = await findBestRouteForExactOut(chainId, tokensForChain, fromNorm, toNorm, desiredOut, bases);
+          if (path && amountIn) {
+            setBestPath(path);
+            setQuoteInRequired(amountIn);
+            setQuoteInDisplay(formatUnits(amountIn, fromToken.decimals));
+            setAmountIn(formatUnits(amountIn, fromToken.decimals));
+          }
         }
       } else {
         const n = Number(amountIn);
         if (!isFinite(n) || n <= 0) return;
         const amtIn = parseUnits(amountIn, fromToken.decimals);
-        const { path, amountOut } = await findBestRoute(chainId, tokens.filter((t) => t.chainId === chainId), fromToken, toToken, amtIn, bases);
-        if (path && amountOut) {
-          setBestPath(path);
-          setQuoteOut(amountOut);
-          setQuoteDisplay(formatUnits(amountOut, toToken.decimals));
-          // Also clear any output manual value
+        if (isKasWkasTrade) {
+          setBestPath([fromToken.address, toToken.address]);
+          setQuoteOut(amtIn);
+          setQuoteDisplay(formatUnits(amtIn, toToken.decimals));
           setAmountOut("");
+        } else {
+          const fromNorm = isNativeToken(fromToken) && wrapped ? { ...wrapped } : fromToken;
+          const toNorm = isNativeToken(toToken) && wrapped ? { ...wrapped } : toToken;
+          const { path, amountOut } = await findBestRoute(chainId, tokensForChain, fromNorm, toNorm, amtIn, bases);
+          if (path && amountOut) {
+            setBestPath(path);
+            setQuoteOut(amountOut);
+            setQuoteDisplay(formatUnits(amountOut, toToken.decimals));
+            setAmountOut("");
+          }
         }
       }
     } catch {
@@ -229,10 +255,14 @@ export default function SwapPage() {
       if (!chain?.contracts.router) return;
       const { JsonRpcProvider, Contract } = await import("ethers");
       const provider = new JsonRpcProvider(chain.rpcUrl);
-      const abi = ["function allowance(address,address) view returns (uint256)"];
-      const c = new Contract(fromToken.address, abi, provider);
-      const al = await c.allowance(account, chain.contracts.router);
-      setAllowanceFrom(BigInt(al));
+      if (isNativeToken(fromToken)) {
+        setAllowanceFrom(BigInt(0));
+      } else {
+        const abi = ["function allowance(address,address) view returns (uint256)"];
+        const c = new Contract(fromToken.address, abi, provider);
+        const al = await c.allowance(account, chain.contracts.router);
+        setAllowanceFrom(BigInt(al));
+      }
     } catch {
       setAllowanceFrom(null);
     }
@@ -253,12 +283,22 @@ export default function SwapPage() {
     return decimalToBigInt(amountIn, fromToken.decimals);
   }, [fromToken, exactOutMode, quoteInRequired, effectiveToleranceBips, amountIn]);
   const needsApproval = useMemo(() => {
+    // For KAS↔WKAS wrapping/unwrapping, no allowance is needed
+    try {
+      if (fromToken && toToken) {
+        const wrapped = findWrappedNative(tokens.filter((t) => t.chainId === (chainId ?? -1)), "WKAS");
+        const fromKas = isNativeToken(fromToken) || (!!wrapped && fromToken.address.toLowerCase() === wrapped.address.toLowerCase());
+        const toKas = isNativeToken(toToken) || (!!wrapped && toToken.address.toLowerCase() === wrapped.address.toLowerCase());
+        if (fromKas && toKas) return false;
+      }
+    } catch {}
     if (!desiredAmountIn || allowanceFrom === null) return false;
+    if (fromToken && isNativeToken(fromToken)) return false;
     return allowanceFrom < desiredAmountIn;
-  }, [desiredAmountIn, allowanceFrom]);
+  }, [desiredAmountIn, allowanceFrom, fromToken, toToken, tokens, chainId]);
 
   const ensureAllowance = useCallback(async (tokenAddr: string, owner: string, spender: string, amountBn: bigint, provider: ContractRunner, onSubmitted?: () => void) => {
-    const { Contract } = await import("ethers");
+    const { Contract, MaxUint256 } = await import("ethers");
     const erc20Abi = [
       "function allowance(address,address) view returns (uint256)",
       "function approve(address,uint256) returns (bool)",
@@ -266,7 +306,13 @@ export default function SwapPage() {
     const c = new Contract(tokenAddr, erc20Abi, provider);
     const current: bigint = await c.allowance(owner, spender);
     if (current >= amountBn) return;
-    const tx = await c.approve(spender, amountBn);
+    let infinite = true;
+    try {
+      const raw = window.localStorage.getItem("krchange:infiniteApprovals");
+      if (raw !== null) infinite = raw === "true";
+    } catch {}
+    const approveAmount = infinite ? MaxUint256 : amountBn;
+    const tx = await c.approve(spender, approveAmount);
     try { onSubmitted?.(); } catch {}
     await tx.wait?.();
   }, []);
@@ -288,7 +334,14 @@ export default function SwapPage() {
 
       const totalBips = effectiveToleranceBips;
 
-      const totalSteps = (needsApproval ? 1 : 0) + 1; // +1 for swap
+      // Detect KAS↔WKAS trade
+      const tokensForChain = tokens.filter((t) => t.chainId === chainId && !isNativeToken(t));
+      const wrapped = findWrappedNative(tokensForChain, "WKAS");
+      const fromKas = isNativeToken(fromToken) || (!!wrapped && fromToken.address.toLowerCase() === wrapped.address.toLowerCase());
+      const toKas = isNativeToken(toToken) || (!!wrapped && toToken.address.toLowerCase() === wrapped.address.toLowerCase());
+      const isKasWkasTrade = fromKas && toKas && !!wrapped;
+
+      const totalSteps = (needsApproval ? 1 : 0) + 1; // +1 for swap/wrap
       let step = 0;
       const announce = (label: string) => {
         step += 1;
@@ -303,48 +356,79 @@ export default function SwapPage() {
         });
       }
 
-      announce("Swap tokens");
-      const routerAbiExactIn = [
-        "function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint256,uint256,address[],address,uint256)",
-      ];
-      const routerAbiExactOut = [
-        "function swapTokensForExactTokens(uint256,uint256,address[],address,uint256) returns (uint256[])",
-      ];
-      const path = bestPath ?? [fromToken.address, toToken.address];
-      const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
+      announce(isKasWkasTrade ? (isNativeToken(fromToken) ? "Wrap KAS → WKAS" : "Unwrap WKAS → KAS") : "Swap tokens");
       let tx;
-      if (exactOutMode) {
-        if (!amountOut) throw new Error("Missing output amount");
-        const desiredOut = parseUnits(amountOut, toToken.decimals);
-        const router = new Contract(chain.contracts.router, routerAbiExactOut, signer);
-        const amountInMax = desiredAmountIn ?? quoteInRequired ?? BigInt(0);
-        tx = await router.swapTokensForExactTokens(
-          desiredOut,
-          amountInMax,
-          path,
-          acct,
-          deadline
-        );
-      } else {
-        const amtIn = parseUnits(amountIn, fromToken.decimals);
-        // Compute minOut from quote when available
-        let amountOutMin = BigInt(0);
-        if (quoteOut && quoteOut > BigInt(0)) {
-          const bips = BigInt(Math.min(10000, Math.max(0, totalBips))); // cap at 100%
-          amountOutMin = (quoteOut * (BigInt(10000) - bips)) / BigInt(10000);
+      if (isKasWkasTrade && wrapped) {
+        const wethAbi = [
+          "function deposit() payable",
+          "function withdraw(uint256)",
+        ];
+        const wkas = new Contract(wrapped.address, wethAbi, signer);
+        if (exactOutMode) {
+          if (!amountOut) throw new Error("Missing output amount");
+          const desiredOut = parseUnits(amountOut, toToken.decimals);
+          if (isNativeToken(fromToken)) {
+            // Wrap exact amount
+            tx = await wkas.deposit({ value: desiredOut });
+          } else {
+            // Unwrap exact amount
+            tx = await wkas.withdraw(desiredOut);
+          }
+        } else {
+          const amtIn = parseUnits(amountIn, fromToken.decimals);
+          if (isNativeToken(fromToken)) {
+            tx = await wkas.deposit({ value: amtIn });
+          } else {
+            tx = await wkas.withdraw(amtIn);
+          }
         }
-        const router = new Contract(chain.contracts.router, routerAbiExactIn, signer);
-        tx = await router.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-          amtIn,
-          amountOutMin,
-          path,
-          acct,
-          deadline
-        );
+      } else {
+        const routerAbi = [
+          "function WETH() view returns (address)",
+          "function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint256,uint256,address[],address,uint256)",
+          "function swapTokensForExactTokens(uint256,uint256,address[],address,uint256) returns (uint256[])",
+          "function swapExactETHForTokensSupportingFeeOnTransferTokens(uint256,address[],address,uint256)",
+          "function swapETHForExactTokens(uint256,address[],address,uint256) returns (uint256[])",
+          "function swapExactTokensForETHSupportingFeeOnTransferTokens(uint256,uint256,address[],address,uint256)",
+          "function swapTokensForExactETH(uint256,uint256,address[],address,uint256) returns (uint256[])",
+        ];
+        const router = new Contract(chain.contracts.router, routerAbi, signer);
+        const wethAddr: string = await router.WETH();
+        const fromIsNative = isNativeToken(fromToken);
+        const toIsNative = isNativeToken(toToken);
+        const path = (bestPath ?? [fromToken.address, toToken.address]).map((addr) => addr === NATIVE_TOKEN_ADDRESS ? wethAddr : addr);
+        const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
+        if (exactOutMode) {
+          if (!amountOut) throw new Error("Missing output amount");
+          const desiredOut = parseUnits(amountOut, toToken.decimals);
+          const amountInMax = desiredAmountIn ?? quoteInRequired ?? BigInt(0);
+          if (fromIsNative) {
+            tx = await router.swapETHForExactTokens(desiredOut, path, acct, deadline, { value: amountInMax });
+          } else if (toIsNative) {
+            tx = await router.swapTokensForExactETH(desiredOut, amountInMax, path, acct, deadline);
+          } else {
+            tx = await router.swapTokensForExactTokens(desiredOut, amountInMax, path, acct, deadline);
+          }
+        } else {
+          const amtIn = parseUnits(amountIn, fromToken.decimals);
+          // Compute minOut from quote when available
+          let amountOutMin = BigInt(0);
+          if (quoteOut && quoteOut > BigInt(0)) {
+            const bips = BigInt(Math.min(10000, Math.max(0, totalBips)));
+            amountOutMin = (quoteOut * (BigInt(10000) - bips)) / BigInt(10000);
+          }
+          if (fromIsNative) {
+            tx = await router.swapExactETHForTokensSupportingFeeOnTransferTokens(amountOutMin, path, acct, deadline, { value: amtIn });
+          } else if (toIsNative) {
+            tx = await router.swapExactTokensForETHSupportingFeeOnTransferTokens(amtIn, amountOutMin, path, acct, deadline);
+          } else {
+            tx = await router.swapExactTokensForTokensSupportingFeeOnTransferTokens(amtIn, amountOutMin, path, acct, deadline);
+          }
+        }
       }
       try {
         setTxCountdownKey(Date.now());
-        setTxStage({ step, total: totalSteps, label: "Swap tokens", pending: true });
+        setTxStage({ step, total: totalSteps, label: isKasWkasTrade ? (isNativeToken(fromToken) ? "Wrap KAS → WKAS" : "Unwrap WKAS → KAS") : "Swap tokens", pending: true });
       } catch {}
       await tx.wait?.();
       try {
@@ -361,7 +445,7 @@ export default function SwapPage() {
     } finally {
       setTxBusy(false);
     }
-  }, [canSubmit, fromToken, toToken, chainId, amountIn, amountOut, ensureAllowance, needsApproval, refreshAllowance, quoteOut, bestPath, effectiveToleranceBips, exactOutMode, quoteInRequired, desiredAmountIn]);
+  }, [canSubmit, fromToken, toToken, chainId, amountIn, amountOut, ensureAllowance, needsApproval, refreshAllowance, quoteOut, bestPath, effectiveToleranceBips, exactOutMode, quoteInRequired, desiredAmountIn, tokens]);
 
   return (
     <div className="max-w-lg mx-auto">
@@ -378,28 +462,7 @@ export default function SwapPage() {
         </div>
 
         {settingsOpen && (
-          <div className="absolute right-3 top-12 z-20 w-48 p-3 rounded-md border border-border bg-popover space-y-2">
-            <div className="text-xs text-muted-foreground">Slippage</div>
-            <div className="flex items-center gap-2">
-              <CleanNumberInput
-                value={String(slippagePct)}
-                onValueChange={(v) => {
-                  const n = Number(v || 0);
-                  setSlippagePct(n);
-                  try {
-                    window.localStorage.setItem("krchange:slippagePct", String(n));
-                    window.dispatchEvent(new Event("krchange:slippage-updated"));
-                  } catch {}
-                }}
-                min={0}
-                max={100}
-                step={0.1}
-                ariaLabel="Slippage percent"
-                className="h-8 w-20 px-2 rounded-md bg-secondary text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary text-sm"
-              />
-              <span className="text-xs text-muted-foreground">%</span>
-            </div>
-          </div>
+          <SettingsPopover slippagePct={slippagePct} onSlippageChange={(n) => setSlippagePct(n)} />
         )}
         <TokenAmountSelector
           chainId={chainId}
@@ -439,7 +502,7 @@ export default function SwapPage() {
           disabled={!canSubmit || txBusy || (exactOutMode ? !quoteInRequired || quoteInRequired === BigInt(0) : !quoteOut || quoteOut === BigInt(0))}
           onClick={onSwap}
           className={`w-full h-10 rounded-md font-medium transition-opacity ${
-            !canSubmit || txBusy || !quoteOut || quoteOut === BigInt(0) ? "bg-primary text-primary-foreground opacity-70 cursor-not-allowed" : "bg-primary text-primary-foreground hover:opacity-90"
+            !canSubmit || txBusy || (exactOutMode ? !quoteInRequired || quoteInRequired === BigInt(0) : !quoteOut || quoteOut === BigInt(0)) ? "bg-primary text-primary-foreground opacity-70 cursor-not-allowed" : "bg-primary text-primary-foreground hover:opacity-90"
           }`}
         >
           {txBusy ? (needsApproval ? "Processing..." : "Processing...") : needsApproval ? `Approve & Swap` : `Swap`}
@@ -454,7 +517,7 @@ export default function SwapPage() {
         {!txBusy && txError && (
           <div className="text-xs text-[var(--danger)] break-words">{txError}</div>
         )}
-        {!txBusy && (!quoteOut || quoteOut === BigInt(0)) && canSubmit && (
+        {!txBusy && !exactOutMode && (!quoteOut || quoteOut === BigInt(0)) && canSubmit && (
           <div className="text-xs text-[var(--danger)]">Insufficient output</div>
         )}
         {effectiveToleranceBips > 5000 && (
