@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Image from "next/image";
+import TokenLogo from "@/components/tokens/TokenLogo";
 import Sparkline from "@/components/charts/Sparkline";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 
@@ -96,11 +96,7 @@ export default function TokenTable({ tokens }: Props) {
               <tr key={t.address} className="border-b border-border/50 hover:bg-secondary/40">
                 <td className="py-2">
                   <div className="flex items-center gap-2">
-                    {t.logo || t.logoURI ? (
-                      <Image src={(t.logo || t.logoURI) as string} alt={t.symbol} width={20} height={20} className="rounded-full" />
-                    ) : (
-                      <div className="h-5 w-5 rounded-full bg-muted" />
-                    )}
+                    <TokenLogo symbol={t.symbol} size={20} logoURI={(t.logo || t.logoURI) as string | undefined} address={t.address} />
                     <div className="flex flex-col">
                       <span className="font-medium">{t.symbol}</span>
                       <span className="text-xs text-muted-foreground">{t.name}</span>

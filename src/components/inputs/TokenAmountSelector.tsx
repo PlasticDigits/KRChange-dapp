@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
+import TokenLogo from "@/components/tokens/TokenLogo";
 import CleanNumberInput from "@/components/inputs/CleanNumberInput";
 import { ChevronDown, AlertTriangle } from "lucide-react";
 import { resolveChain } from "@/lib/chain";
@@ -275,9 +275,14 @@ export default function TokenAmountSelector({ chainId, account: accountProp, tok
           aria-haspopup="dialog"
           aria-expanded={pickerOpen}
         >
-          {selected?.logoURI && (
-            <Image src={selected.logoURI} alt={selected.symbol} width={16} height={16} className="rounded-full" />
-          )}
+          <TokenLogo
+            symbol={selected?.symbol}
+            size={16}
+            logoURI={selected?.logoURI}
+            address={selected?.address}
+            chainId={selected?.chainId}
+            isListed={selected ? (isNativeAddress(selected.address) ? true : undefined) : undefined}
+          />
           {selected?.symbol || "Select"}
           <ChevronDown size={14} />
         </button>
@@ -341,11 +346,14 @@ export default function TokenAmountSelector({ chainId, account: accountProp, tok
                     setSearch("");
                   }}
                 >
-                  {t.logoURI ? (
-                    <Image src={t.logoURI} alt={t.symbol} width={20} height={20} className="rounded-full" />
-                  ) : (
-                    <div className="h-5 w-5 rounded-full bg-muted" />
-                  )}
+                  <TokenLogo
+                    symbol={t.symbol}
+                    size={20}
+                    logoURI={t.logoURI}
+                    address={t.address}
+                    chainId={t.chainId}
+                    isListed={isNativeAddress(t.address) ? true : undefined}
+                  />
                   <div className="flex-1">
                     <div className="font-medium">{t.symbol}</div>
                     <div className="text-xs text-muted-foreground">{t.name}</div>
