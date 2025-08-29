@@ -19,11 +19,11 @@ export default function SteelSlider({ label, value, onChange, accent = "primary"
 
   return (
     <div className={`w-full ${className || ""}`}>
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-2 pr-8">
         <label className={`text-sm ${accent === "danger" ? "text-[var(--danger)]" : ""}`}>{label}</label>
         <div className="text-sm tabular-nums">{Math.max(0, Math.min(100, value)).toFixed(0)}%</div>
       </div>
-      <div className={`relative h-6 ${clAccent}`}>
+      <div className={`steel-slider relative h-6 ${clAccent}`}>
         {/* Rail */}
         <div className="absolute inset-y-0 left-0 right-0 rounded-full bg-[color-mix(in_oklab,var(--muted)_80%,black_20%)]/60 border border-border overflow-hidden">
           {/* Progress with subtle sheen */}

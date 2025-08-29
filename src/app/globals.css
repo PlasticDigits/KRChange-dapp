@@ -302,3 +302,48 @@ body.custom-cursor-active, body.custom-cursor-active * {
     animation: none !important;
   }
 }
+
+/* Hide native range input visuals inside steel slider to avoid double thumbs */
+.steel-slider input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+.steel-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 0;
+  height: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+.steel-slider input[type="range"]::-webkit-slider-runnable-track {
+  background: transparent;
+  border: none;
+}
+.steel-slider input[type="range"]::-moz-range-thumb {
+  width: 0;
+  height: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+.steel-slider input[type="range"]::-moz-range-track {
+  background: transparent;
+  border: none;
+}
+.steel-slider input[type="range"]::-moz-range-progress {
+  background: transparent;
+  border: none;
+}
+.steel-slider input[type="range"]::-ms-thumb {
+  width: 0;
+  height: 0;
+  background: transparent;
+  border: none;
+}
+.steel-slider input[type="range"]::-ms-track {
+  background: transparent;
+  border-color: transparent;
+  color: transparent;
+}
