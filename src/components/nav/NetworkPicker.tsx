@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { getPublicConfig, getDefaultNetworkId } from "@/lib/chain";
 
 export default function NetworkPicker() {
@@ -22,25 +23,28 @@ export default function NetworkPicker() {
   return (
     <div className="hidden md:flex items-center gap-2">
       <label htmlFor="network" className="sr-only">Network</label>
-      <select
-        id="network"
-        className="h-9 px-2 rounded-md bg-secondary text-sm"
-        value={networkId ?? 0}
-        onChange={(e) => {
-          const id = Number(e.target.value);
-          setNetworkId(id);
-          try {
-            window.localStorage.setItem("networkId", String(id));
-          } catch {}
-          window.dispatchEvent(new CustomEvent("krchange:network-changed", { detail: { chainId: id } }));
-        }}
-      >
-        {networks.map((n) => (
-          <option key={n.id} value={n.id}>
-            {n.name}
-          </option>
-        ))}
-      </select>
+      <div className="relative">
+        <select
+          id="network"
+          className="h-9 pl-3 pr-8 rounded-md bg-secondary text-sm appearance-none cursor-pointer"
+          value={networkId ?? 0}
+          onChange={(e) => {
+            const id = Number(e.target.value);
+            setNetworkId(id);
+            try {
+              window.localStorage.setItem("networkId", String(id));
+            } catch {}
+            window.dispatchEvent(new CustomEvent("krchange:network-changed", { detail: { chainId: id } }));
+          }}
+        >
+          {networks.map((n) => (
+            <option key={n.id} value={n.id}>
+              {n.name}
+            </option>
+          ))}
+        </select>
+        <ChevronDown size={16} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+      </div>
     </div>
   );
 }

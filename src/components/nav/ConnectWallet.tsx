@@ -221,24 +221,27 @@ export default function ConnectWallet() {
                 </button>
                 <div className="px-3 pt-2 pb-1 text-xs text-muted-foreground">Switch Network</div>
                 <div className="px-2 pb-2">
-                  <select
-                    className="w-full h-9 px-2 rounded-md bg-secondary text-sm"
-                    onChange={(e) => {
-                      const value = Number(e.target.value);
-                      log("menuitem: select network", { value });
-                      switchNetwork(value);
-                    }}
-                    defaultValue=""
-                  >
-                    <option value="" disabled>
-                      Select network
-                    </option>
-                    {networks.map((n) => (
-                      <option key={n.id} value={n.id}>
-                        {n.name}
+                  <div className="relative">
+                    <select
+                      className="w-full h-9 pl-3 pr-8 rounded-md bg-secondary text-sm appearance-none cursor-pointer"
+                      onChange={(e) => {
+                        const value = Number(e.target.value);
+                        log("menuitem: select network", { value });
+                        switchNetwork(value);
+                      }}
+                      defaultValue=""
+                    >
+                      <option value="" disabled>
+                        Select network
                       </option>
-                    ))}
-                  </select>
+                      {networks.map((n) => (
+                        <option key={n.id} value={n.id}>
+                          {n.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown size={16} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  </div>
                 </div>
               </div>
             </div>,
